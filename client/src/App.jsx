@@ -1,122 +1,83 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
 
-function App() {
-  const [count, setCount] = useState(0)
+const DOC_ID = 'doc-001';
+
+export default function App() {
+  const [content, setContent] = useState('');
+  const [version, setVersion] = useState(0);
+  const [status, setStatus] = useState('connecting...');
+  const socketRef = useRef(null);
+  const saveTimer = useRef(null);
+  const navigate = useNavigate();
+
+  const token = localStorage.getItem('token');
+  const userName = localStorage.getItem('name') || 'anonymous';
+
+  useEffect(() => {
+    if (!token) { navigate('/login'); return; }
+
+    socketRef.current = io('http://localhost:3001', {
+      auth: { token }
+    });
+
+    socketRef.current.emit('join-doc', { docId: DOC_ID, userId: userName });
+
+    socketRef.current.on('load-doc', ({ content, version }) => {
+      setContent(content);
+      setVersion(version);
+      setStatus('synced');
+    });
+
+    socketRef.current.on('receive-changes', ({ delta, version }) => {
+      setContent(delta);
+      setVersion(version);
+    });
+
+    socketRef.current.on('save-confirmed', ({ version }) => {
+      setVersion(version);
+      setStatus('saved');
+    });
+
+    return () => socketRef.current.disconnect();
+  }, []);
+
+  function handleChange(e) {
+    const newContent = e.target.value;
+    setContent(newContent);
+    setStatus('typing...');
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      socketRef.current.emit('send-changes', {
+        docId: DOC_ID,
+        delta: newContent,
+        version,
+        userId: userName
+      });
+      setStatus('saving...');
+    }, 500);
+  }
+
+  function logout() {
+    localStorage.clear();
+    navigate('/login');
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+    <div style={{ padding: '2rem', fontFamily: 'monospace' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        <span style={{ fontSize: 13 }}>
+          Status: <b>{status}</b> | Version: <b>{version}</b> | Logged in as: <b>{userName}</b>
+        </span>
+        <button onClick={logout} style={{ fontSize: 12, cursor: 'pointer' }}>Logout</button>
+      </div>
+      <textarea
+        value={content}
+        onChange={handleChange}
+        style={{ width: '100%', height: '400px', fontSize: 14, padding: '1rem' }}
+        placeholder="Start typing..."
+      />
+    </div>
+  );
 }
-
-export default App

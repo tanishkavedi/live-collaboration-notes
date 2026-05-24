@@ -1,17 +1,26 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../db');
 
-const VersionSchema = new mongoose.Schema(
-  {
-    docId: { type: String, required: true, index: true },
-    version: { type: Number, required: true },
-    content: { type: String, required: true },
-    editedBy: { type: String, required: true },
-    delta: { type: String },
+const Version = sequelize.define('Version', {
+  docId: {
+    type: DataTypes.STRING,
+    allowNull: false
   },
-  { timestamps: true }
-);
+  version: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  content: {
+    type: DataTypes.TEXT,
+    allowNull: false
+  },
+  editedBy: {
+    type: DataTypes.STRING,
+    allowNull: false
+  },
+  delta: {
+    type: DataTypes.TEXT
+  }
+});
 
-// Compound index — fast lookup by doc + version
-VersionSchema.index({ docId: 1, version: -1 });
-
-module.exports = mongoose.model('Version', VersionSchema);
+module.exports = Version;

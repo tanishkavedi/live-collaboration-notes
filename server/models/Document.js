@@ -1,15 +1,26 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../db');
 
-const DocumentSchema = new mongoose.Schema(
-  {
-    _id: { type: String, required: true },
-    title: { type: String, default: 'Untitled' },
-    content: { type: String, default: '' },
-    version: { type: Number, default: 0 },
-    activeUsers: [{ type: String }],
-    lastEditedBy: { type: String },
+const Document = sequelize.define('Document', {
+  id: {
+    type: DataTypes.STRING,
+    primaryKey: true
   },
-  { timestamps: true }
-);
+  title: {
+    type: DataTypes.STRING,
+    defaultValue: 'Untitled'
+  },
+  content: {
+    type: DataTypes.TEXT,
+    defaultValue: ''
+  },
+  version: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
+  },
+  lastEditedBy: {
+    type: DataTypes.STRING
+  }
+});
 
-module.exports = mongoose.model('Document', DocumentSchema);
+module.exports = Document;

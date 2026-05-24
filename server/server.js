@@ -2,10 +2,13 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const mongoose = require('mongoose');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const sequelize = require('./db');
 const Document = require('./models/Document');
 const Version = require('./models/Version');
+const User = require('./models/User');
 
 const app = express();
 app.use(cors());
@@ -14,22 +17,54 @@ app.use(express.json());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch((err) => console.error('MongoDB error:', err));
+const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
 
+// Sync database tables
+sequelize.sync({ alter: true })
+  .then(() => console.log('PostgreSQL connected and tables synced'))
+  .catch(err => console.error('Database error:', err));
+
+// Auth routes
+app.post('/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    const existing = await User.findOne({ where: { email } });
+    if (existing) return res.status(400).json({ error: 'Email already in use' });
+    const user = await User.create({ name, email, password });
+    const token = jwt.sign({ id: user.id, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, name: user.name });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ where: { email } });
+    if (!user || !(await user.comparePassword(password))) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    const token = jwt.sign({ id: user.id, name: user.name }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, name: user.name });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Socket.io
 const docState = {};
 
 io.on('connection', (socket) => {
-
   socket.on('join-doc', async ({ docId, userId }) => {
     socket.join(docId);
     socket.docId = docId;
     socket.userId = userId;
 
-    let doc = await Document.findById(docId);
-    if (!doc) doc = await Document.create({ _id: docId, content: '', version: 0 });
+    let doc = await Document.findByPk(docId);
+    if (!doc) doc = await Document.create({ id: docId, content: '', version: 0 });
 
     docState[docId] = docState[docId] || { content: doc.content, version: doc.version };
 
@@ -53,21 +88,19 @@ io.on('connection', (socket) => {
     state.content = delta;
     state.version++;
 
-    await Document.findByIdAndUpdate(docId, {
-      content: state.content,
-      version: state.version,
-      lastEditedBy: userId
-    });
+    await Document.update(
+      { content: state.content, version: state.version, lastEditedBy: userId },
+      { where: { id: docId } }
+    );
 
     await Version.create({
       docId,
       version: state.version,
       content: state.content,
       editedBy: userId,
-      delta: delta
+      delta
     });
 
-    // broadcast once only
     socket.to(docId).emit('receive-changes', {
       delta,
       version: state.version,
