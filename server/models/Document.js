@@ -20,6 +20,10 @@ const Document = sequelize.define('Document', {
   },
   lastEditedBy: {
     type: DataTypes.STRING
+  },
+  ownerId: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 });
 
