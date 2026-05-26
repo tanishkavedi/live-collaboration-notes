@@ -36,30 +36,32 @@ Backend
  - Express Validator
 
  # 📁 Project Structure
-live-collaboration-notes/
-├── client/                 
-│   ├── src/
-│   │   ├── pages/ 
-│   │   │   ├── Home.jsx
-│   │   │   ├── Login.jsx
-│   │   │   ├── Signup.jsx 
-│   │   │   └── AcceptInvite.jsx
-│   │   ├── hooks/ 
-│   │   |   └── useIsMobile.js
-│   │   ├── utils/
-│   │   │   └── auth.js
-│   │   └── App.jsx         
-│   └── package.json
-├── server/                
-│   ├── models/           
-│   │   ├──Document.js
-│   │   ├──User.js
-│   │   ├──Version.js
-│   │   └──DocumentShare.js
-│   ├── tests/              
-│   │   └── auth.test.js
-│   ├── db.js
-│   ├── server.js
-│   └── package.json
-└── README.md
+     live-collaboration-notes
+
+ client/                 
+    src/
+      pages/ 
+        Home.jsx
+        Login.jsx
+        Signup.jsx 
+        AcceptInvite.jsx
+      hooks/ 
+        useIsMobile.js
+      utils/
+        auth.js
+      App.jsx
+      main.jsx         
+   package.json
+ server/                
+   models/           
+    Document.js
+    User.js
+    Version.js
+    DocumentShare.js
+   tests/              
+    auth.test.js
+   db.js
+   server.js
+   package.json
+README.md
 
