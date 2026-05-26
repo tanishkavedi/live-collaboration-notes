@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import { authFetch, clearSession } from './utils/auth.js';
 
 const API = '';
 
@@ -14,12 +15,10 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [activeUsers, setActiveUsers] = useState([]);
   const [typingUsers, setTypingUsers] = useState([]);
-
-  // Version history
   const [showHistory, setShowHistory] = useState(false);
   const [versions, setVersions] = useState([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
-  const [previewContent, setPreviewContent] = useState(null); // null = not previewing
+  const [previewContent, setPreviewContent] = useState(null);
 
   const socketRef = useRef(null);
   const saveTimer = useRef(null);
@@ -34,13 +33,15 @@ export default function App() {
   const t = dark ? darkTheme : lightTheme;
 
   useEffect(() => {
-    if (!token) { navigate('/login'); return; }
     if (!docId) { navigate('/'); return; }
 
     socketRef.current = io(API, { auth: { token } });
 
     socketRef.current.on('connect_error', (err) => {
-      if (err.message === 'Unauthorized') { localStorage.clear(); navigate('/login'); }
+      if (err.message === 'Unauthorized') {
+        clearSession();
+        navigate('/login');
+      }
     });
 
     socketRef.current.on('load-doc', ({ content, version }) => {
@@ -72,9 +73,10 @@ export default function App() {
 
     socketRef.current.emit('join-doc', { docId });
 
-    fetch(`${API}/docs/${docId}`, { headers: { Authorization: `Bearer ${token}` } })
+    authFetch(`${API}/docs/${docId}`, {}, navigate)
       .then(r => r.json())
-      .then(doc => setTitle(doc?.title === 'Untitled' ? '' : (doc?.title || '')));
+      .then(doc => setTitle(doc?.title === 'Untitled' ? '' : (doc?.title || '')))
+      .catch(() => {});
 
     return () => {
       socketRef.current?.disconnect();
@@ -87,11 +89,10 @@ export default function App() {
     localStorage.setItem('theme', dark ? 'dark' : 'light');
   }, [dark]);
 
-  // Load version history when panel opens
   useEffect(() => {
     if (!showHistory) { setVersions([]); setPreviewContent(null); return; }
     setLoadingVersions(true);
-    fetch(`${API}/docs/${docId}/versions`, { headers: { Authorization: `Bearer ${token}` } })
+    authFetch(`${API}/docs/${docId}/versions`, {}, navigate)
       .then(r => r.json())
       .then(data => { setVersions(data); setLoadingVersions(false); })
       .catch(() => setLoadingVersions(false));
@@ -99,12 +100,12 @@ export default function App() {
 
   async function saveTitleToServer(newTitle) {
     try {
-      await fetch(`${API}/docs/${docId}/title`, {
+      await authFetch(`${API}/docs/${docId}/title`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: newTitle || 'Untitled' })
-      });
-    } catch (err) { console.error('Title save failed:', err); }
+      }, navigate);
+    } catch {}
   }
 
   function handleTitleChange(e) {
@@ -128,28 +129,25 @@ export default function App() {
     }, 500);
   }
 
- 
-async function handleDone() {
-  if (saving) return;
-  setSaving(true);
-  setStatus('saving...');
-
-  clearTimeout(saveTimer.current);
-  clearTimeout(titleTimer.current);
-
-  // Save both title and content via HTTP — no socket needed
-  await Promise.all([
-    saveTitleToServer(title.trim()),
-    fetch(`${API}/docs/${docId}/content`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ content })
-    })
-  ]);
-
-  setSaving(false);
-  navigate('/');
-}
+  async function handleDone() {
+    if (saving) return;
+    setSaving(true);
+    setStatus('saving...');
+    clearTimeout(saveTimer.current);
+    clearTimeout(titleTimer.current);
+    try {
+      await Promise.all([
+        saveTitleToServer(title.trim()),
+        authFetch(`${API}/docs/${docId}/content`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content })
+        }, navigate)
+      ]);
+    } catch {}
+    setSaving(false);
+    navigate('/');
+  }
 
   function restoreVersion(v) {
     if (!confirm(`Restore to version ${v.version} by ${v.editedBy}?\n\nThis will overwrite current content.`)) return;
@@ -160,7 +158,7 @@ async function handleDone() {
     socketRef.current.emit('send-changes', { docId, delta: v.content, version: versionRef.current });
   }
 
-  function logout() { localStorage.clear(); navigate('/login'); }
+  function logout() { clearSession(); navigate('/login'); }
 
   const othersTyping = typingUsers.filter(u => u !== userName);
   const typingText = othersTyping.length === 1
@@ -178,8 +176,6 @@ async function handleDone() {
 
   return (
     <div style={{ ...s.page, background: t.pageBg, color: t.text }}>
-
-      {/* ── Top navbar ── */}
       <div style={{ ...s.topbar, background: t.navBg, borderBottom: `1px solid ${t.border}` }}>
         <div style={s.topLeft}>
           <div style={s.logoBox}><span style={{ fontSize: '1rem' }}>📝</span></div>
@@ -213,7 +209,6 @@ async function handleDone() {
         </div>
       </div>
 
-      {/* ── Toolbar ── */}
       <div style={{ ...s.toolbar, background: t.toolbarBg, borderBottom: `1px solid ${t.border}` }}>
         <div style={s.toolLeft}>
           <button onClick={() => navigate('/')}
@@ -230,16 +225,13 @@ async function handleDone() {
           )}
         </div>
         <div style={s.toolRight}>
-          {/* History toggle */}
-          <button
-            onClick={() => setShowHistory(h => !h)}
+          <button onClick={() => setShowHistory(h => !h)}
             style={{
               ...s.toolBtn,
               background: showHistory ? t.text : t.btnBg,
               border: `1px solid ${t.border}`,
               color: showHistory ? t.pageBg : t.text
-            }}
-          >
+            }}>
             ◻ History
           </button>
           <button onClick={handleDone} disabled={saving}
@@ -252,10 +244,7 @@ async function handleDone() {
         </div>
       </div>
 
-      {/* ── Main area: editor + history sidebar ── */}
       <div style={s.mainArea}>
-
-        {/* Editor */}
         <div style={{ ...s.editorBody, maxWidth: showHistory ? '100%' : '860px' }}>
           <input
             value={title}
@@ -280,66 +269,44 @@ async function handleDone() {
           />
           {previewContent !== null && (
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={() => setPreviewContent(null)}
-                style={{ ...s.toolBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}
-              >
+              <button onClick={() => setPreviewContent(null)}
+                style={{ ...s.toolBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}>
                 ← Back to editing
               </button>
             </div>
           )}
         </div>
 
-        {/* History sidebar */}
         {showHistory && (
           <div style={{ ...s.historySidebar, background: t.navBg, borderLeft: `1px solid ${t.border}` }}>
             <div style={s.historyHeader}>
               <span style={{ fontWeight: '600', fontSize: '0.9rem', color: t.text }}>Version history</span>
-              <button
-                onClick={() => { setShowHistory(false); setPreviewContent(null); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.subtext, fontSize: '1rem' }}
-              >
+              <button onClick={() => { setShowHistory(false); setPreviewContent(null); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.subtext, fontSize: '1rem' }}>
                 ✕
               </button>
             </div>
-
             {loadingVersions ? (
               <p style={{ color: t.subtext, fontSize: '0.85rem', padding: '1rem' }}>Loading...</p>
             ) : versions.length === 0 ? (
-              <p style={{ color: t.subtext, fontSize: '0.85rem', padding: '1rem' }}>No versions yet. Start editing to create history.</p>
+              <p style={{ color: t.subtext, fontSize: '0.85rem', padding: '1rem' }}>No versions yet.</p>
             ) : (
               <div style={s.versionList}>
                 {versions.map(v => (
-                  <div
-                    key={v.id}
-                    style={{
-                      ...s.versionItem,
-                      background: t.toolbarBg,
-                      border: `1px solid ${t.border}`,
-                    }}
-                  >
+                  <div key={v.id} style={{ ...s.versionItem, background: t.toolbarBg, border: `1px solid ${t.border}` }}>
                     <div style={s.versionMeta}>
-                      <span style={{ fontWeight: '600', fontSize: '0.82rem', color: t.text }}>
-                        v{v.version}
-                      </span>
-                      <span style={{ fontSize: '0.75rem', color: t.subtext }}>
-                        {formatDate(v.createdAt)}
-                      </span>
+                      <span style={{ fontWeight: '600', fontSize: '0.82rem', color: t.text }}>v{v.version}</span>
+                      <span style={{ fontSize: '0.75rem', color: t.subtext }}>{formatDate(v.createdAt)}</span>
                     </div>
-                    <span style={{ fontSize: '0.78rem', color: t.subtext, marginBottom: '8px' }}>
-                      by {v.editedBy}
-                    </span>
+                    <span style={{ fontSize: '0.78rem', color: t.subtext, marginBottom: '8px' }}>by {v.editedBy}</span>
                     <div style={s.versionActions}>
                       <button
                         onClick={() => setPreviewContent(previewContent === v.content ? null : v.content)}
-                        style={{ ...s.versionBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}
-                      >
+                        style={{ ...s.versionBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}>
                         {previewContent === v.content ? 'Close' : 'Preview'}
                       </button>
-                      <button
-                        onClick={() => restoreVersion(v)}
-                        style={{ ...s.versionBtn, background: t.text, border: 'none', color: t.pageBg }}
-                      >
+                      <button onClick={() => restoreVersion(v)}
+                        style={{ ...s.versionBtn, background: t.text, border: 'none', color: t.pageBg }}>
                         Restore
                       </button>
                     </div>
@@ -444,10 +411,7 @@ const s = {
     padding: '16px', borderBottom: '1px solid #333', position: 'sticky', top: 0
   },
   versionList: { display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' },
-  versionItem: {
-    display: 'flex', flexDirection: 'column', gap: '4px',
-    padding: '10px 12px', borderRadius: '8px'
-  },
+  versionItem: { display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 12px', borderRadius: '8px' },
   versionMeta: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   versionActions: { display: 'flex', gap: '6px', marginTop: '4px' },
   versionBtn: {
