@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useIsMobile } from '../hooks/useIsMobile'; // ADDED
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const API = '';
 
@@ -10,13 +10,16 @@ export default function Home() {
   const [creating, setCreating] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
   const [searchQuery, setSearchQuery] = useState('');
-  const isMobile = useIsMobile(); // ADDED
+  const [shareModal, setShareModal] = useState(null);
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareRole, setShareRole] = useState('view');
+  const [shareStatus, setShareStatus] = useState('');
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
   const userName = localStorage.getItem('name') || 'User';
   const initials = userName.slice(0, 2).toUpperCase();
-
   const t = dark ? darkTheme : lightTheme;
 
   const filteredDocs = docs.filter(doc =>
@@ -83,6 +86,31 @@ export default function Home() {
     }
   }
 
+  function openShareModal(e, docId) {
+    e.stopPropagation();
+    setShareModal(docId);
+    setShareEmail('');
+    setShareRole('view');
+    setShareStatus('');
+  }
+
+  async function submitShare() {
+    if (!shareEmail.trim()) return;
+    setShareStatus('sending');
+    try {
+      const res = await fetch(`${API}/docs/${shareModal}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: shareEmail.trim(), role: shareRole })
+      });
+      const data = await res.json();
+      if (!res.ok) { setShareStatus(data.error || 'Something went wrong'); return; }
+      setShareStatus('sent');
+    } catch {
+      setShareStatus('Something went wrong');
+    }
+  }
+
   function logout() {
     localStorage.clear();
     navigate('/login');
@@ -98,65 +126,44 @@ export default function Home() {
   return (
     <div style={{ ...s.page, background: t.pageBg }}>
 
-      {/* Navbar — MOBILE: hide username, tighten padding */}
+      {/* Navbar */}
       <div style={{
-        ...s.navbar,
-        background: t.navBg,
-        borderBottom: `1px solid ${t.border}`,
-        padding: isMobile ? '0 1rem' : '0 1.5rem', // MOBILE
+        ...s.navbar, background: t.navBg, borderBottom: `1px solid ${t.border}`,
+        padding: isMobile ? '0 1rem' : '0 1.5rem',
       }}>
         <div style={s.navLeft}>
           <span style={s.navLogo}>📝</span>
           <span style={{ ...s.navTitle, color: t.text }}>My Notes</span>
         </div>
         <div style={s.navRight}>
-          <button
-            onClick={() => setDark(d => !d)}
-            style={{ ...s.iconBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}
-          >
+          <button onClick={() => setDark(d => !d)}
+            style={{ ...s.iconBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}>
             {dark ? '☀️' : '🌙'}
           </button>
-          <div style={{ ...s.avatar, background: t.avatarBg, color: t.avatarText }}>
-            {initials}
-          </div>
-          {/* MOBILE: hide username to save space */}
-          {!isMobile && (
-            <span style={{ ...s.userName, color: t.text }}>{userName}</span>
-          )}
-          <button
-            onClick={logout}
-            style={{ ...s.logoutBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.subtext }}
-          >
+          <div style={{ ...s.avatar, background: t.avatarBg, color: t.avatarText }}>{initials}</div>
+          {!isMobile && <span style={{ ...s.userName, color: t.text }}>{userName}</span>}
+          <button onClick={logout}
+            style={{ ...s.logoutBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.subtext }}>
             Sign out
           </button>
         </div>
       </div>
 
       {/* Content */}
-      <div style={{
-        ...s.content,
-        padding: isMobile ? '1.5rem 1rem' : '2.5rem 1rem', // MOBILE
-      }}>
-        {/* MOBILE: stack title and button vertically */}
+      <div style={{ ...s.content, padding: isMobile ? '1.5rem 1rem' : '2.5rem 1rem' }}>
         <div style={{
           ...s.header,
-          flexDirection: isMobile ? 'column' : 'row', // MOBILE
+          flexDirection: isMobile ? 'column' : 'row',
           alignItems: isMobile ? 'flex-start' : 'center',
           gap: isMobile ? '0.75rem' : '0',
           marginBottom: '1.5rem',
         }}>
           <h1 style={{ ...s.pageTitle, color: t.text }}>Documents</h1>
-          <button
-            onClick={createDoc}
-            disabled={creating}
+          <button onClick={createDoc} disabled={creating}
             style={{
-              ...s.newBtn,
-              background: t.text,
-              color: t.pageBg,
-              opacity: creating ? 0.6 : 1,
-              width: isMobile ? '100%' : 'auto', // MOBILE: full-width button
-            }}
-          >
+              ...s.newBtn, background: t.text, color: t.pageBg,
+              opacity: creating ? 0.6 : 1, width: isMobile ? '100%' : 'auto',
+            }}>
             {creating ? 'Creating...' : '+ New document'}
           </button>
         </div>
@@ -167,12 +174,7 @@ export default function Home() {
             placeholder="Search documents..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            style={{
-              ...s.searchBar,
-              background: t.cardBg,
-              border: `1px solid ${t.border}`,
-              color: t.text,
-            }}
+            style={{ ...s.searchBar, background: t.cardBg, border: `1px solid ${t.border}`, color: t.text }}
           />
         )}
 
@@ -191,10 +193,7 @@ export default function Home() {
         ) : (
           <div style={{
             ...s.grid,
-            // MOBILE: 2 columns on mobile instead of auto-fill 220px
-            gridTemplateColumns: isMobile
-              ? 'repeat(2, 1fr)'
-              : 'repeat(auto-fill, minmax(220px, 1fr))',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(220px, 1fr))',
           }}>
             {filteredDocs.map(doc => {
               const displayTitle = doc.title && doc.title.trim() !== '' ? doc.title : 'Untitled';
@@ -205,41 +204,152 @@ export default function Home() {
                   key={doc.id}
                   onClick={() => navigate(`/doc/${doc.id}`)}
                   style={{
-                    ...s.docCard,
-                    background: t.cardBg,
-                    border: `1px solid ${t.border}`,
-                    padding: isMobile ? '1rem' : '1.25rem', // MOBILE
+                    ...s.docCard, background: t.cardBg, border: `1px solid ${t.border}`,
+                    padding: isMobile ? '1rem' : '1.25rem',
                   }}
                   onMouseEnter={e => e.currentTarget.style.borderColor = t.text}
                   onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
                 >
                   <div style={s.docCardTop}>
                     <span style={s.docIcon}>📄</span>
-                    <button
-                      onClick={e => deleteDoc(e, doc.id)}
-                      style={{ ...s.deleteBtn, color: t.subtext }}
-                      title="Delete"
-                    >
-                      ✕
-                    </button>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      {!doc.shared && (
+                        <button onClick={e => openShareModal(e, doc.id)}
+                          style={{ ...s.actionBtn, color: t.subtext }} title="Share">
+                          ↗
+                        </button>
+                      )}
+                      {!doc.shared && (
+                        <button onClick={e => deleteDoc(e, doc.id)}
+                          style={{ ...s.actionBtn, color: t.subtext }} title="Delete">
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
+
                   <p style={{
                     ...s.docTitle,
                     color: isUntitled ? t.subtext : t.text,
                     fontStyle: isUntitled ? 'italic' : 'normal',
-                    fontSize: isMobile ? '0.875rem' : '0.95rem', // MOBILE
+                    fontSize: isMobile ? '0.875rem' : '0.95rem',
                   }}>
                     {displayTitle}
                   </p>
+
                   <p style={{ ...s.docMeta, color: t.subtext }}>
                     Edited {formatDate(doc.updatedAt)}
                   </p>
+
+                  {doc.shared && (
+                    <span style={{ fontSize: '0.7rem', color: t.subtext, marginTop: '4px', display: 'block' }}>
+                      {doc.role === 'edit' ? '✏️ Shared with you' : '👁 View only'}
+                    </span>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Share Modal */}
+      {shareModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 100, padding: '1rem'
+          }}
+          onClick={() => setShareModal(null)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: t.cardBg, border: `1px solid ${t.border}`, borderRadius: '12px',
+              padding: '2rem', width: '100%', maxWidth: '400px',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.12)'
+            }}
+          >
+            <h3 style={{ color: t.text, marginBottom: '1.25rem', fontSize: '1rem', fontWeight: '600', margin: '0 0 1.25rem' }}>
+              Share document
+            </h3>
+
+            {shareStatus === 'sent' ? (
+              <>
+                <p style={{ color: t.text, marginBottom: '1rem' }}>✓ Invite sent to {shareEmail}</p>
+                <button onClick={() => setShareModal(null)}
+                  style={{ width: '100%', padding: '0.65rem', background: t.text, color: t.cardBg, border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '500' }}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ marginBottom: '1rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: t.text, marginBottom: '0.4rem' }}>
+                    Email address
+                  </label>
+                  <input
+                    type="email"
+                    value={shareEmail}
+                    onChange={e => setShareEmail(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && submitShare()}
+                    placeholder="colleague@example.com"
+                    style={{
+                      width: '100%', padding: '0.6rem 0.875rem', border: `1px solid ${t.border}`,
+                      borderRadius: '8px', fontSize: '0.9rem', color: t.text, background: t.pageBg,
+                      outline: 'none', boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: t.text, marginBottom: '0.4rem' }}>
+                    Permission
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {['view', 'edit'].map(r => (
+                      <button key={r} onClick={() => setShareRole(r)}
+                        style={{
+                          flex: 1, padding: '0.5rem', borderRadius: '8px', cursor: 'pointer',
+                          border: `1px solid ${shareRole === r ? t.text : t.border}`,
+                          background: shareRole === r ? t.text : 'none',
+                          color: shareRole === r ? t.cardBg : t.text,
+                          fontSize: '0.875rem', fontWeight: '500'
+                        }}>
+                        {r === 'view' ? '👁 View' : '✏️ Edit'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {shareStatus && shareStatus !== 'sending' && (
+                  <p style={{ color: '#dc2626', fontSize: '0.875rem', marginBottom: '0.75rem' }}>
+                    {shareStatus}
+                  </p>
+                )}
+
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  <button onClick={() => setShareModal(null)}
+                    style={{ flex: 1, padding: '0.65rem', background: 'none', color: t.text, border: `1px solid ${t.border}`, borderRadius: '8px', cursor: 'pointer', fontWeight: '500' }}>
+                    Cancel
+                  </button>
+                  <button
+                    onClick={submitShare}
+                    disabled={shareStatus === 'sending' || !shareEmail.trim()}
+                    style={{
+                      flex: 1, padding: '0.65rem', background: t.text, color: t.cardBg,
+                      border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '500',
+                      opacity: (shareStatus === 'sending' || !shareEmail.trim()) ? 0.6 : 1
+                    }}>
+                    {shareStatus === 'sending' ? 'Sending...' : 'Send invite'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -293,7 +403,7 @@ const s = {
   docCard: { borderRadius: '10px', cursor: 'pointer', transition: 'border-color 0.15s', userSelect: 'none' },
   docCardTop: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' },
   docIcon: { fontSize: '1.5rem' },
-  deleteBtn: {
+  actionBtn: {
     background: 'none', border: 'none', cursor: 'pointer',
     fontSize: '0.8rem', padding: '2px 4px', borderRadius: '4px', opacity: 0.6
   },

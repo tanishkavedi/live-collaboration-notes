@@ -6,9 +6,9 @@ import App from './App.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import Home from './pages/Home.jsx';
+import AcceptInvite from './pages/AcceptInvite.jsx';
 import { isTokenValid } from './utils/auth.js';
 
-// Protects any route — redirects to /login if token is missing or expired
 function Guard({ children }) {
   if (!isTokenValid()) {
     localStorage.removeItem('token');
@@ -26,6 +26,7 @@ createRoot(document.getElementById('root')).render(
         <Route path="/doc/:docId" element={<Guard><App /></Guard>} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/invite/:token" element={<AcceptInvite />} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </BrowserRouter>
