@@ -11,6 +11,9 @@ const Document = require('./models/Document');
 const Version = require('./models/Version');
 const User = require('./models/User');
 const DocumentShare = require('./models/DocumentShare');
+const rateLimit = require('express-rate-limit');
+const { body, validationResult } = require('express-validator');
+
 
 const app = express();
 
@@ -23,6 +26,16 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // max 10 attempts per IP
+  message: { error: 'Too many attempts, please try again in 15 minutes' }
+});
+
+app.use('/login', authLimiter);
+app.use('/register', authLimiter);
+
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -48,7 +61,14 @@ function requireAuth(req, res, next) {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
-app.post('/register', async (req, res) => {
+app.post('/register', authLimiter, [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
+
   try {
     const { name, email, password } = req.body;
     const existing = await User.findOne({ where: { email } });
@@ -59,7 +79,13 @@ app.post('/register', async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
-app.post('/login', async (req, res) => {
+app.post('/login', authLimiter, [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+  body('password').notEmpty().withMessage('Password is required'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
+
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ where: { email } });
@@ -188,22 +214,24 @@ app.get('/docs/:id/versions', requireAuth, async (req, res) => {
 
 // ─── Sharing ──────────────────────────────────────────────────────────────────
 
-app.post('/docs/:id/share', requireAuth, async (req, res) => {
+app.post('/docs/:id/share', requireAuth, [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+  body('role').isIn(['view', 'edit']).withMessage('Role must be view or edit'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ error: errors.array()[0].msg });
+
   try {
     const doc = await Document.findByPk(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Not found' });
     if (doc.ownerId !== req.user.id) return res.status(403).json({ error: 'Only the owner can share' });
 
     const { email, role } = req.body;
-    if (!email || !['view', 'edit'].includes(role))
-      return res.status(400).json({ error: 'Email and role (view/edit) required' });
-
     const owner = await User.findByPk(req.user.id);
     if (owner.email === email)
       return res.status(400).json({ error: 'You cannot share a document with yourself' });
 
     await DocumentShare.destroy({ where: { docId: doc.id, inviteeEmail: email } });
-
     const token = uuidv4();
     await DocumentShare.create({ docId: doc.id, inviteeEmail: email, role, token });
 
