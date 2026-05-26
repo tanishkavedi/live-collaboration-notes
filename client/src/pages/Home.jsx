@@ -132,13 +132,20 @@ export default function Home() {
         padding: isMobile ? '0 1rem' : '0 1.5rem',
       }}>
         <div style={s.navLeft}>
-          <span style={s.navLogo}>📝</span>
-          <span style={{ ...s.navTitle, color: t.text }}>My Notes</span>
+           <div style={s.logoBox}><div style={{ width: '30px', height: '30px', borderRadius: '6px', background: '#e8734a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+  </div></div>
+         <span style={{ fontSize: '1 rem', fontWeight: '600', color: t.text }}>CollabDocs</span>
         </div>
         <div style={s.navRight}>
           <button onClick={() => setDark(d => !d)}
             style={{ ...s.iconBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}>
-            {dark ? '☀️' : '🌙'}
+            {dark ? '✺' : '☾'}
           </button>
           <div style={{ ...s.avatar, background: t.avatarBg, color: t.avatarText }}>{initials}</div>
           {!isMobile && <span style={{ ...s.userName, color: t.text }}>{userName}</span>}
@@ -368,13 +375,15 @@ const darkTheme = {
 
 const s = {
   page: { minHeight: '100vh', display: 'flex', flexDirection: 'column' },
-  navbar: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    height: '52px', position: 'sticky', top: 0, zIndex: 10
-  },
+navbar: {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  height: '64px', // was 52px
+  position: 'sticky', top: 0, zIndex: 10
+},
+navTitle: { fontSize: '1rem', fontWeight: '700', color: '#e8734a' },
   navLeft: { display: 'flex', alignItems: 'center', gap: '0.5rem' },
   navLogo: { fontSize: '1.2rem' },
-  navTitle: { fontSize: '0.95rem', fontWeight: '600' },
+ 
   navRight: { display: 'flex', alignItems: 'center', gap: '0.75rem' },
   iconBtn: { fontSize: '1rem', padding: '4px 8px', borderRadius: '6px', cursor: 'pointer', lineHeight: 1 },
   avatar: {
@@ -386,7 +395,7 @@ const s = {
   logoutBtn: { fontSize: '0.8rem', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer' },
   content: { maxWidth: '860px', width: '100%', margin: '0 auto' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  pageTitle: { fontSize: '1.4rem', fontWeight: '600', margin: 0 },
+  pageTitle: { fontSize: '2rem', fontWeight: '700', margin: 0 },
   newBtn: {
     padding: '0.5rem 1rem', borderRadius: '8px', border: 'none',
     fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer', transition: 'opacity 0.15s'

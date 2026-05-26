@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { useIsMobile } from '../hooks/useIsMobile'; // ADDED
+import { useIsMobile } from '../hooks/useIsMobile';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -8,7 +8,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
-  const isMobile = useIsMobile(); // ADDED
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -23,22 +23,27 @@ export default function Login() {
 
   const styles = {
     page: {
-      minHeight: '100vh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: pageBg, padding: '1rem',
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      background: pageBg, padding: '1rem',
+    },
+    appName: {
+      fontSize: '1.5rem', fontWeight: '700', color: '#e8734a',
+      marginBottom: '1.5rem', letterSpacing: '-0.5px',
+      display: 'flex', alignItems: 'center', gap: '0.4rem'
     },
     card: {
       background: cardBg, border: `1px solid ${border}`, borderRadius: '12px',
-      padding: isMobile ? '1.5rem' : '2.5rem', // MOBILE
+      padding: isMobile ? '1.5rem' : '2.5rem',
       width: '100%', maxWidth: '400px',
       boxShadow: '0 1px 3px rgba(0,0,0,0.06)', position: 'relative',
     },
     themeToggle: {
       position: 'absolute', top: '1rem', right: '1rem',
-      background: 'none', border: 'none', fontSize: '1.1rem', cursor: 'pointer',
-      padding: '0.25rem', lineHeight: 1,
+      background: 'none', border: 'none', fontSize: '1.1rem',
+      cursor: 'pointer', padding: '0.25rem', lineHeight: 1,
     },
-    logo: { fontSize: '2rem', marginBottom: '1rem' },
-    title: { fontSize: '1.5rem', fontWeight: '600', color: text, marginBottom: '0.25rem' },
+    title: { fontSize: '1.4rem', fontWeight: '600', color: text, marginBottom: '0.25rem' },
     subtitle: { fontSize: '0.9rem', color: subtext, marginBottom: '1.5rem' },
     error: {
       background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626',
@@ -65,7 +70,7 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:3001/login', {
+      const res = await fetch('/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -83,11 +88,22 @@ export default function Login() {
 
   return (
     <div style={styles.page}>
+       <div style={styles.appName}>
+  <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#e8734a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+  </div>
+  CollabDocs
+</div>
+      
       <div style={styles.card}>
         <button style={styles.themeToggle} onClick={() => setDark(d => !d)}>
-          {dark ? '☀️' : '🌙'}
+          {dark ? '✺' : '☾'}
         </button>
-        <div style={styles.logo}>📝</div>
         <h1 style={styles.title}>Welcome back</h1>
         <p style={styles.subtitle}>Sign in to your account</p>
         {error && <div style={styles.error}>{error}</div>}

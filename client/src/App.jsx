@@ -178,8 +178,15 @@ export default function App() {
     <div style={{ ...s.page, background: t.pageBg, color: t.text }}>
       <div style={{ ...s.topbar, background: t.navBg, borderBottom: `1px solid ${t.border}` }}>
         <div style={s.topLeft}>
-          <div style={s.logoBox}><span style={{ fontSize: '1rem' }}>📝</span></div>
-          <span style={{ fontSize: '0.95rem', fontWeight: '500', color: t.text }}>My Notes</span>
+          <div style={s.logoBox}><div style={{ width: '34px', height: '34 px', borderRadius: '6px', background: '#e8734a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="16" y1="13" x2="8" y2="13"/>
+      <line x1="16" y1="17" x2="8" y2="17"/>
+    </svg>
+  </div></div>
+          <span style={{ fontSize: '1 rem', fontWeight: '600', color: t.text }}>CollabDocs</span>
         </div>
         <div style={s.topRight}>
           {activeUsers.length > 0 && (
@@ -351,7 +358,7 @@ const s = {
   topLeft: { display: 'flex', alignItems: 'center', gap: '10px' },
   topRight: { display: 'flex', alignItems: 'center', gap: '10px' },
   logoBox: {
-    width: '34px', height: '34px', borderRadius: '8px', background: '#e8734a',
+    width: '38px', height: '38px', borderRadius: '8px', background: '#e8734a',
     display: 'flex', alignItems: 'center', justifyContent: 'center'
   },
   avatar: {
