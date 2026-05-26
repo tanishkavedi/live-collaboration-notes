@@ -24,7 +24,7 @@ Frontend
  - React Router v6
  - Socket.IO client
 
-Backend**
+Backend
  - Node.js + Express
  - Socket.IO
  - PostgreSQL
@@ -37,16 +37,27 @@ Backend**
 
  # 📁 Project Structure
 live-collaboration-notes/
-├── client/                 # React frontend
+├── client/                 
 │   ├── src/
-│   │   ├── pages/          # Home, Login, Signup , AcceptInvite
-│   │   ├── hooks/          # useIsMobile
-│   │   ├── utils/          # auth helpers
-│   │   └── App.jsx         # Editor component
+│   │   ├── pages/ 
+│   │   │   ├── Home.jsx
+│   │   │   ├── Login.jsx
+│   │   │   ├── Signup.jsx 
+│   │   │   └── AcceptInvite.jsx
+│   │   ├── hooks/ 
+│   │   |   └── useIsMobile.js
+│   │   ├── utils/
+│   │   │   └── auth.js
+│   │   └── App.jsx         
 │   └── package.json
-├── server/                 # Node.js backend
-│   ├── models/             # Document, User, Version, DocumentShare
-│   ├── tests/              # Integration tests
+├── server/                
+│   ├── models/           
+│   │   ├──Document.js
+│   │   ├──User.js
+│   │   ├──Version.js
+│   │   └──DocumentShare.js
+│   ├── tests/              
+│   │   └── auth.test.js
 │   ├── db.js
 │   ├── server.js
 │   └── package.json
