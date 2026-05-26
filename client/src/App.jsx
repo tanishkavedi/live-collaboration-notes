@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 
-const API = 'http://localhost:3001';
+const API = '';
 
 export default function App() {
   const { docId } = useParams();
@@ -12,302 +12,446 @@ export default function App() {
   const [status, setStatus] = useState('connecting...');
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
   const [saving, setSaving] = useState(false);
+  const [activeUsers, setActiveUsers] = useState([]);
+  const [typingUsers, setTypingUsers] = useState([]);
+
+  // Version history
+  const [showHistory, setShowHistory] = useState(false);
+  const [versions, setVersions] = useState([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [previewContent, setPreviewContent] = useState(null); // null = not previewing
 
   const socketRef = useRef(null);
   const saveTimer = useRef(null);
+  const titleTimer = useRef(null);
+  const typingTimer = useRef(null);
+  const versionRef = useRef(0);
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
   const userName = localStorage.getItem('name') || 'anonymous';
   const initials = userName.slice(0, 2).toUpperCase();
-
   const t = dark ? darkTheme : lightTheme;
 
-  // ─── Socket + doc load ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!token) { navigate('/login'); return; }
-    if (!docId)  { navigate('/');     return; }
+    if (!docId) { navigate('/'); return; }
 
     socketRef.current = io(API, { auth: { token } });
 
     socketRef.current.on('connect_error', (err) => {
-      if (err.message === 'Unauthorized') {
-        localStorage.clear();
-        navigate('/login');
-      }
+      if (err.message === 'Unauthorized') { localStorage.clear(); navigate('/login'); }
+    });
+
+    socketRef.current.on('load-doc', ({ content, version }) => {
+      setContent(content); setVersion(version); versionRef.current = version; setStatus('saved');
+    });
+    socketRef.current.on('receive-changes', ({ delta, version }) => {
+      setContent(delta); setVersion(version); versionRef.current = version; setStatus('saved');
+    });
+    socketRef.current.on('save-confirmed', ({ version }) => {
+      setVersion(version); versionRef.current = version; setStatus('saved');
+    });
+    socketRef.current.on('conflict', ({ serverContent }) => {
+      const keep = confirm('Someone else edited this document.\n\nOK = use their version. Cancel = keep yours.');
+      if (keep) setContent(serverContent);
+    });
+    socketRef.current.on('error', ({ message }) => { alert(message); navigate('/'); });
+
+    socketRef.current.on('user-joined', ({ userId }) => {
+      setActiveUsers(prev => prev.includes(userId) ? prev : [...prev, userId]);
+    });
+    socketRef.current.on('user-left', ({ userId }) => {
+      setActiveUsers(prev => prev.filter(u => u !== userId));
+      setTypingUsers(prev => prev.filter(u => u !== userId));
+    });
+    socketRef.current.on('user-typing', ({ userId }) => {
+      setTypingUsers(prev => prev.includes(userId) ? prev : [...prev, userId]);
+      setTimeout(() => setTypingUsers(prev => prev.filter(u => u !== userId)), 2000);
     });
 
     socketRef.current.emit('join-doc', { docId });
 
-    socketRef.current.on('load-doc', ({ content, version }) => {
-      setContent(content);
-      setVersion(version);
-      setStatus('synced');
-    });
-
-    socketRef.current.on('receive-changes', ({ delta, version }) => {
-      setContent(delta);
-      setVersion(version);
-      setStatus('synced');
-    });
-
-    socketRef.current.on('save-confirmed', ({ version }) => {
-      setVersion(version);
-      setStatus('saved');
-    });
-
-    socketRef.current.on('conflict', ({ serverContent }) => {
-      const keep = confirm(
-        'Someone else edited this document.\n\nClick OK to use their version, Cancel to keep yours.'
-      );
-      if (keep) setContent(serverContent);
-    });
-
-    socketRef.current.on('error', ({ message }) => {
-      alert(message);
-      navigate('/');
-    });
-
-    // Load title from REST API
-    fetch(`${API}/docs/${docId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    fetch(`${API}/docs/${docId}`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
-      .then(doc => {
-        if (doc?.title) setTitle(doc.title);
-      });
+      .then(doc => setTitle(doc?.title === 'Untitled' ? '' : (doc?.title || '')));
 
-    return () => socketRef.current?.disconnect();
+    return () => {
+      socketRef.current?.disconnect();
+      clearTimeout(titleTimer.current);
+      clearTimeout(typingTimer.current);
+    };
   }, [docId]);
 
-  // ─── Persist theme ────────────────────────────────────────────────────────────
   useEffect(() => {
     localStorage.setItem('theme', dark ? 'dark' : 'light');
   }, [dark]);
 
-  // ─── Content change (debounced socket emit) ──────────────────────────────────
-  function handleChange(e) {
-    const newContent = e.target.value;
-    setContent(newContent);
-    setStatus('saving...');
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      socketRef.current.emit('send-changes', { docId, delta: newContent, version });
-    }, 500);
-  }
+  // Load version history when panel opens
+  useEffect(() => {
+    if (!showHistory) { setVersions([]); setPreviewContent(null); return; }
+    setLoadingVersions(true);
+    fetch(`${API}/docs/${docId}/versions`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(data => { setVersions(data); setLoadingVersions(false); })
+      .catch(() => setLoadingVersions(false));
+  }, [showHistory]);
 
-  // ─── Title change (local only, saved on Done) ─────────────────────────────────
-  function handleTitleChange(e) {
-    setTitle(e.target.value);
-  }
-
-  // ─── Done: flush content + title, then go back ───────────────────────────────
-  async function handleDone() {
-    setSaving(true);
-
-    // Flush any pending content save immediately
-    clearTimeout(saveTimer.current);
-    socketRef.current.emit('send-changes', { docId, delta: content, version });
-
-    // Save title to REST API
+  async function saveTitleToServer(newTitle) {
     try {
       await fetch(`${API}/docs/${docId}/title`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ title: title.trim() || 'Untitled' })
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: newTitle || 'Untitled' })
       });
-    } catch (err) {
-      console.error('Title save failed:', err);
-    }
-
-    setSaving(false);
-    navigate('/');
+    } catch (err) { console.error('Title save failed:', err); }
   }
 
-  // ─── Logout ───────────────────────────────────────────────────────────────────
-  function logout() {
-    localStorage.clear();
-    navigate('/login');
+  function handleTitleChange(e) {
+    const val = e.target.value;
+    setTitle(val);
+    setStatus('saving...');
+    clearTimeout(titleTimer.current);
+    titleTimer.current = setTimeout(() => { saveTitleToServer(val.trim()); setStatus('saved'); }, 800);
   }
 
-  const statusColor =
-    status === 'synced' || status === 'saved' ? '#0f7b6c' : '#787774';
+  function handleChange(e) {
+    const val = e.target.value;
+    setContent(val);
+    setStatus('saving...');
+    clearTimeout(typingTimer.current);
+    socketRef.current.emit('typing', { docId });
+    typingTimer.current = setTimeout(() => {}, 1500);
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      socketRef.current.emit('send-changes', { docId, delta: val, version: versionRef.current });
+    }, 500);
+  }
 
-  // ─── Render ───────────────────────────────────────────────────────────────────
+ 
+async function handleDone() {
+  if (saving) return;
+  setSaving(true);
+  setStatus('saving...');
+
+  clearTimeout(saveTimer.current);
+  clearTimeout(titleTimer.current);
+
+  // Save both title and content via HTTP — no socket needed
+  await Promise.all([
+    saveTitleToServer(title.trim()),
+    fetch(`${API}/docs/${docId}/content`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ content })
+    })
+  ]);
+
+  setSaving(false);
+  navigate('/');
+}
+
+  function restoreVersion(v) {
+    if (!confirm(`Restore to version ${v.version} by ${v.editedBy}?\n\nThis will overwrite current content.`)) return;
+    setContent(v.content);
+    setPreviewContent(null);
+    setShowHistory(false);
+    setStatus('saving...');
+    socketRef.current.emit('send-changes', { docId, delta: v.content, version: versionRef.current });
+  }
+
+  function logout() { localStorage.clear(); navigate('/login'); }
+
+  const othersTyping = typingUsers.filter(u => u !== userName);
+  const typingText = othersTyping.length === 1
+    ? `${othersTyping[0]} is typing...`
+    : othersTyping.length > 1
+    ? `${othersTyping.slice(0, 2).join(', ')} are typing...`
+    : '';
+
+  const statusIcon = status === 'saved' ? '✓' : '○';
+
+  function formatDate(iso) {
+    const d = new Date(iso);
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
   return (
-    <div style={{ ...styles.page, background: t.pageBg }}>
+    <div style={{ ...s.page, background: t.pageBg, color: t.text }}>
 
-      {/* NAVBAR */}
-      <div style={{ ...styles.navbar, background: t.navBg, borderBottom: `1px solid ${t.border}` }}>
-
-        {/* Left: Back + Logo + Title input */}
-        <div style={styles.navLeft}>
-          <button
-            onClick={() => navigate('/')}
-            style={{ ...styles.backBtn, color: t.subtext }}
-          >
-            ← Documents
-          </button>
-
-          <span style={styles.navLogo}>📝</span>
-
-          <input
-            value={title}
-            onChange={handleTitleChange}
-            placeholder="Untitled"
-            style={{
-              ...styles.titleInput,
-              color: t.text,
-              borderBottom: `1px solid ${t.border}`,
-            }}
-          />
+      {/* ── Top navbar ── */}
+      <div style={{ ...s.topbar, background: t.navBg, borderBottom: `1px solid ${t.border}` }}>
+        <div style={s.topLeft}>
+          <div style={s.logoBox}><span style={{ fontSize: '1rem' }}>📝</span></div>
+          <span style={{ fontSize: '0.95rem', fontWeight: '500', color: t.text }}>My Notes</span>
         </div>
-
-        {/* Right: status + version + theme + avatar + Done + signout */}
-        <div style={styles.navRight}>
-
-          <span style={{ ...styles.status, color: statusColor }}>
-            {status === 'saved' || status === 'synced' ? '✓' : '○'} {status}
-          </span>
-
-          <span style={{
-            ...styles.versionBadge,
-            background: t.badgeBg,
-            border: `1px solid ${t.border}`,
-            color: t.subtext
-          }}>
-            v{version}
-          </span>
-
-          <button
-            onClick={() => setDark(d => !d)}
-            style={{ ...styles.iconBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}
-          >
-            {dark ? '☀️' : '🌙'}
+        <div style={s.topRight}>
+          {activeUsers.length > 0 && (
+            <div style={s.presenceRow}>
+              {activeUsers.slice(0, 4).map(u => (
+                <div key={u} title={u} style={{ ...s.presenceAvatar, background: stringToColor(u) }}>
+                  {u.slice(0, 2).toUpperCase()}
+                </div>
+              ))}
+              {activeUsers.length > 4 && (
+                <div style={{ ...s.presenceAvatar, background: '#666', fontSize: '0.65rem' }}>
+                  +{activeUsers.length - 4}
+                </div>
+              )}
+            </div>
+          )}
+          <button onClick={() => setDark(d => !d)}
+            style={{ ...s.squareBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}>
+            {dark ? '☀' : '☽'}
           </button>
-
-          <div style={{ ...styles.avatar, background: t.avatarBg, color: t.avatarText }}>
-            {initials}
-          </div>
-
-          <span style={{ ...styles.userName, color: t.text }}>{userName}</span>
-
-          {/* ✅ DONE BUTTON */}
-          <button
-            onClick={handleDone}
-            disabled={saving}
-            style={{
-              ...styles.doneBtn,
-              background: dark ? '#e8e8e4' : '#37352f',
-              color: dark ? '#191919' : '#ffffff',
-              opacity: saving ? 0.6 : 1,
-              cursor: saving ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {saving ? 'Saving…' : '✓ Done'}
-          </button>
-
-          <button
-            onClick={logout}
-            style={{ ...styles.logoutBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.subtext }}
-          >
+          <div style={{ ...s.avatar, background: '#4a7fa5' }}>{initials}</div>
+          <span style={{ fontSize: '0.9rem', color: t.text }}>{userName}</span>
+          <button onClick={logout}
+            style={{ ...s.signoutBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}>
             Sign out
           </button>
         </div>
       </div>
 
-      {/* EDITOR */}
-      <div style={styles.editorWrap}>
-        <textarea
-          value={content}
-          onChange={handleChange}
-          placeholder="Start writing..."
-          style={{ ...styles.editor, color: t.text, caretColor: t.text }}
-        />
+      {/* ── Toolbar ── */}
+      <div style={{ ...s.toolbar, background: t.toolbarBg, borderBottom: `1px solid ${t.border}` }}>
+        <div style={s.toolLeft}>
+          <button onClick={() => navigate('/')}
+            style={{ ...s.toolBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}>
+            ◻ Documents
+          </button>
+          <div style={s.toolDivider} />
+          <span style={{ fontSize: '0.82rem', color: t.subtext }}>{statusIcon} {status}</span>
+          {typingText && (
+            <>
+              <div style={s.toolDivider} />
+              <span style={{ fontSize: '0.78rem', color: t.subtext, fontStyle: 'italic' }}>{typingText}</span>
+            </>
+          )}
+        </div>
+        <div style={s.toolRight}>
+          {/* History toggle */}
+          <button
+            onClick={() => setShowHistory(h => !h)}
+            style={{
+              ...s.toolBtn,
+              background: showHistory ? t.text : t.btnBg,
+              border: `1px solid ${t.border}`,
+              color: showHistory ? t.pageBg : t.text
+            }}
+          >
+            ◻ History
+          </button>
+          <button onClick={handleDone} disabled={saving}
+            style={{
+              ...s.doneBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text,
+              opacity: saving ? 0.55 : 1, cursor: saving ? 'not-allowed' : 'pointer'
+            }}>
+            ◻ {saving ? 'Saving…' : 'Done'}
+          </button>
+        </div>
       </div>
 
+      {/* ── Main area: editor + history sidebar ── */}
+      <div style={s.mainArea}>
+
+        {/* Editor */}
+        <div style={{ ...s.editorBody, maxWidth: showHistory ? '100%' : '860px' }}>
+          <input
+            value={title}
+            onChange={handleTitleChange}
+            onKeyDown={e => e.key === 'Enter' && handleDone()}
+            placeholder="Untitled"
+            style={{ ...s.titleBox, background: t.inputBg, border: `1px solid ${t.inputBorder}`, color: t.text }}
+          />
+          <textarea
+            value={previewContent !== null ? previewContent : content}
+            onChange={previewContent !== null ? undefined : handleChange}
+            readOnly={previewContent !== null}
+            placeholder="Start writing…"
+            style={{
+              ...s.contentBox,
+              background: previewContent !== null ? t.toolbarBg : t.inputBg,
+              border: `1px solid ${t.inputBorder}`,
+              color: previewContent !== null ? t.subtext : t.text,
+              caretColor: t.text,
+              cursor: previewContent !== null ? 'default' : 'text'
+            }}
+          />
+          {previewContent !== null && (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                onClick={() => setPreviewContent(null)}
+                style={{ ...s.toolBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}
+              >
+                ← Back to editing
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* History sidebar */}
+        {showHistory && (
+          <div style={{ ...s.historySidebar, background: t.navBg, borderLeft: `1px solid ${t.border}` }}>
+            <div style={s.historyHeader}>
+              <span style={{ fontWeight: '600', fontSize: '0.9rem', color: t.text }}>Version history</span>
+              <button
+                onClick={() => { setShowHistory(false); setPreviewContent(null); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: t.subtext, fontSize: '1rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingVersions ? (
+              <p style={{ color: t.subtext, fontSize: '0.85rem', padding: '1rem' }}>Loading...</p>
+            ) : versions.length === 0 ? (
+              <p style={{ color: t.subtext, fontSize: '0.85rem', padding: '1rem' }}>No versions yet. Start editing to create history.</p>
+            ) : (
+              <div style={s.versionList}>
+                {versions.map(v => (
+                  <div
+                    key={v.id}
+                    style={{
+                      ...s.versionItem,
+                      background: t.toolbarBg,
+                      border: `1px solid ${t.border}`,
+                    }}
+                  >
+                    <div style={s.versionMeta}>
+                      <span style={{ fontWeight: '600', fontSize: '0.82rem', color: t.text }}>
+                        v{v.version}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: t.subtext }}>
+                        {formatDate(v.createdAt)}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.78rem', color: t.subtext, marginBottom: '8px' }}>
+                      by {v.editedBy}
+                    </span>
+                    <div style={s.versionActions}>
+                      <button
+                        onClick={() => setPreviewContent(previewContent === v.content ? null : v.content)}
+                        style={{ ...s.versionBtn, background: t.btnBg, border: `1px solid ${t.border}`, color: t.text }}
+                      >
+                        {previewContent === v.content ? 'Close' : 'Preview'}
+                      </button>
+                      <button
+                        onClick={() => restoreVersion(v)}
+                        style={{ ...s.versionBtn, background: t.text, border: 'none', color: t.pageBg }}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Themes ───────────────────────────────────────────────────────────────────
+function stringToColor(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  const colors = ['#4a7fa5', '#6a9e6a', '#a56a4a', '#7a4aa5', '#a54a7a', '#4aa5a0'];
+  return colors[Math.abs(hash) % colors.length];
+}
+
 const lightTheme = {
-  pageBg: '#ffffff', navBg: '#ffffff', border: '#e8e8e4',
-  text: '#37352f', subtext: '#787774', badgeBg: '#f7f7f5',
-  btnBg: '#ffffff', avatarBg: '#37352f', avatarText: '#ffffff'
+  pageBg: '#f0f0f0', navBg: '#ffffff', toolbarBg: '#f7f7f7',
+  border: '#ddd', text: '#1a1a1a', subtext: '#888',
+  btnBg: '#ffffff', inputBg: '#ffffff', inputBorder: '#ccc',
 };
-
 const darkTheme = {
-  pageBg: '#191919', navBg: '#1f1f1f', border: '#2f2f2f',
-  text: '#e8e8e4', subtext: '#9b9b9b', badgeBg: '#2f2f2f',
-  btnBg: '#2f2f2f', avatarBg: '#e8e8e4', avatarText: '#191919'
+  pageBg: '#111111', navBg: '#1e1e1e', toolbarBg: '#1a1a1a',
+  border: '#333', text: '#e8e8e8', subtext: '#888',
+  btnBg: '#2a2a2a', inputBg: '#2a2a2a', inputBorder: '#3a3a3a',
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const styles = {
+const s = {
   page: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-    transition: 'background 0.2s'
+    minHeight: '100vh', display: 'flex', flexDirection: 'column',
+    fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', transition: 'background 0.2s'
   },
-  navbar: {
+  topbar: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '0 1.5rem', height: '52px', position: 'sticky', top: 0, zIndex: 10
+    padding: '0 20px', height: '56px', position: 'sticky', top: 0, zIndex: 20
   },
-  navLeft: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem'
-  },
-  backBtn: {
-    fontSize: '0.85rem', cursor: 'pointer',
-    padding: '4px 6px', background: 'none', border: 'none'
-  },
-  navLogo: { fontSize: '1.2rem' },
-  titleInput: {
-    fontSize: '0.95rem', fontWeight: '500',
-    outline: 'none', padding: '2px 6px',
-    minWidth: '160px', maxWidth: '320px',
-    background: 'transparent', border: 'none',
-    fontFamily: 'inherit',
-  },
-  navRight: {
-    display: 'flex', alignItems: 'center', gap: '0.75rem'
-  },
-  status: { fontSize: '0.8rem' },
-  versionBadge: {
-    fontSize: '0.75rem', borderRadius: '4px', padding: '2px 6px'
-  },
-  iconBtn: {
-    fontSize: '1rem', padding: '4px 8px',
-    borderRadius: '6px', cursor: 'pointer', lineHeight: 1
+  topLeft: { display: 'flex', alignItems: 'center', gap: '10px' },
+  topRight: { display: 'flex', alignItems: 'center', gap: '10px' },
+  logoBox: {
+    width: '34px', height: '34px', borderRadius: '8px', background: '#e8734a',
+    display: 'flex', alignItems: 'center', justifyContent: 'center'
   },
   avatar: {
+    width: '34px', height: '34px', borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: '0.78rem', fontWeight: '600', color: '#fff'
+  },
+  presenceRow: { display: 'flex', alignItems: 'center', gap: '4px' },
+  presenceAvatar: {
     width: '28px', height: '28px', borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: '0.7rem', fontWeight: '600'
+    fontSize: '0.68rem', fontWeight: '600', color: '#fff', cursor: 'default'
   },
-  userName: { fontSize: '0.875rem' },
+  squareBtn: {
+    width: '36px', height: '36px', borderRadius: '8px', cursor: 'pointer',
+    fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center'
+  },
+  signoutBtn: { padding: '6px 16px', borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' },
+  toolbar: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '0 20px', height: '52px', position: 'sticky', top: '56px', zIndex: 19
+  },
+  toolLeft: { display: 'flex', alignItems: 'center', gap: '12px' },
+  toolRight: { display: 'flex', alignItems: 'center', gap: '10px' },
+  toolBtn: {
+    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px',
+    borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer'
+  },
+  toolDivider: { width: '1px', height: '20px', background: '#444', opacity: 0.4 },
   doneBtn: {
-    fontSize: '0.85rem', fontWeight: '600',
-    padding: '6px 16px', borderRadius: '6px',
-    border: 'none', transition: 'opacity 0.15s'
+    display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 20px',
+    borderRadius: '8px', fontSize: '0.875rem', fontWeight: '500', transition: 'opacity 0.15s'
   },
-  logoutBtn: {
-    fontSize: '0.8rem', padding: '4px 10px',
-    borderRadius: '6px', cursor: 'pointer'
+  mainArea: { display: 'flex', flex: 1, overflow: 'hidden' },
+  editorBody: {
+    display: 'flex', flexDirection: 'column', gap: '16px',
+    width: '100%', margin: '32px auto', padding: '0 20px',
+    maxWidth: '860px', transition: 'max-width 0.2s'
   },
-  editorWrap: {
-    flex: 1, maxWidth: '740px', width: '100%',
-    margin: '0 auto', padding: '3rem 1rem'
+  titleBox: {
+    width: '100%', padding: '14px 18px', borderRadius: '10px', outline: 'none',
+    fontSize: '1rem', fontWeight: '400', transition: 'border-color 0.15s', boxSizing: 'border-box',
+    fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
   },
-  editor: {
-    width: '100%', minHeight: 'calc(100vh - 120px)',
-    border: 'none', outline: 'none', resize: 'none',
-    fontSize: '1rem', lineHeight: '1.8', background: 'transparent',
-    fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif',
-    transition: 'color 0.2s'
+  contentBox: {
+    width: '100%', minHeight: '500px', padding: '14px 18px', borderRadius: '10px',
+    outline: 'none', resize: 'none', fontSize: '1rem', lineHeight: '1.75',
+    transition: 'border-color 0.15s', boxSizing: 'border-box',
+    fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+  },
+  historySidebar: {
+    width: '280px', minWidth: '280px', display: 'flex', flexDirection: 'column',
+    height: 'calc(100vh - 108px)', position: 'sticky', top: '108px', overflowY: 'auto'
+  },
+  historyHeader: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    padding: '16px', borderBottom: '1px solid #333', position: 'sticky', top: 0
+  },
+  versionList: { display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' },
+  versionItem: {
+    display: 'flex', flexDirection: 'column', gap: '4px',
+    padding: '10px 12px', borderRadius: '8px'
+  },
+  versionMeta: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  versionActions: { display: 'flex', gap: '6px', marginTop: '4px' },
+  versionBtn: {
+    flex: 1, padding: '5px 8px', borderRadius: '6px',
+    fontSize: '0.78rem', fontWeight: '500', cursor: 'pointer', textAlign: 'center'
   }
 };

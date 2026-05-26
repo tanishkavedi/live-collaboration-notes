@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-const API = 'http://localhost:3001';
+const API = '';
 
 export default function Home() {
   const [docs, setDocs] = useState([]);
@@ -16,9 +16,17 @@ export default function Home() {
 
   const t = dark ? darkTheme : lightTheme;
 
+  // Fetch on mount
   useEffect(() => {
     if (!token) { navigate('/login'); return; }
     fetchDocs();
+  }, []);
+
+  // Re-fetch when user returns to this page (after hitting Done in editor)
+  useEffect(() => {
+    function onFocus() { fetchDocs(); }
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   useEffect(() => {
@@ -46,7 +54,7 @@ export default function Home() {
       const res = await fetch(`${API}/docs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: 'Untitled' })
+        body: JSON.stringify({ title: '' })
       });
       const doc = await res.json();
       navigate(`/doc/${doc.id}`);
@@ -76,12 +84,15 @@ export default function Home() {
   }
 
   function formatDate(iso) {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric'
+    });
   }
 
   return (
     <div style={{ ...s.page, background: t.pageBg }}>
+
       {/* Navbar */}
       <div style={{ ...s.navbar, background: t.navBg, borderBottom: `1px solid ${t.border}` }}>
         <div style={s.navLeft}>
@@ -108,14 +119,14 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Main content */}
+      {/* Content */}
       <div style={s.content}>
         <div style={s.header}>
           <h1 style={{ ...s.pageTitle, color: t.text }}>Documents</h1>
           <button
             onClick={createDoc}
             disabled={creating}
-            style={{ ...s.newBtn, background: t.text, color: t.pageBg }}
+            style={{ ...s.newBtn, background: t.text, color: t.pageBg, opacity: creating ? 0.6 : 1 }}
           >
             {creating ? 'Creating...' : '+ New document'}
           </button>
@@ -130,32 +141,45 @@ export default function Home() {
           </div>
         ) : (
           <div style={s.grid}>
-            {docs.map(doc => (
-              <div
-                key={doc.id}
-                onClick={() => navigate(`/doc/${doc.id}`)}
-                style={{ ...s.docCard, background: t.cardBg, border: `1px solid ${t.border}` }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = t.text}
-                onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
-              >
-                <div style={s.docCardTop}>
-                  <span style={s.docIcon}>📄</span>
-                  <button
-                    onClick={e => deleteDoc(e, doc.id)}
-                    style={{ ...s.deleteBtn, color: t.subtext }}
-                    title="Delete"
-                  >
-                    ✕
-                  </button>
+            {docs.map(doc => {
+              // Show actual title if it exists and isn't just "Untitled"
+              const displayTitle = doc.title && doc.title.trim() !== '' ? doc.title : 'Untitled';
+              const isUntitled = displayTitle === 'Untitled';
+
+              return (
+                <div
+                  key={doc.id}
+                  onClick={() => navigate(`/doc/${doc.id}`)}
+                  style={{ ...s.docCard, background: t.cardBg, border: `1px solid ${t.border}` }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = t.text}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = t.border}
+                >
+                  <div style={s.docCardTop}>
+                    <span style={s.docIcon}>📄</span>
+                    <button
+                      onClick={e => deleteDoc(e, doc.id)}
+                      style={{ ...s.deleteBtn, color: t.subtext }}
+                      title="Delete"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Title — real title in normal color, Untitled in muted color */}
+                  <p style={{
+                    ...s.docTitle,
+                    color: isUntitled ? t.subtext : t.text,
+                    fontStyle: isUntitled ? 'italic' : 'normal'
+                  }}>
+                    {displayTitle}
+                  </p>
+
+                  <p style={{ ...s.docMeta, color: t.subtext }}>
+                    Edited {formatDate(doc.updatedAt)}
+                  </p>
                 </div>
-                <p style={{ ...s.docTitle, color: t.text }}>
-                  {doc.title || 'Untitled'}
-                </p>
-                <p style={{ ...s.docMeta, color: t.subtext }}>
-                  Edited {formatDate(doc.updatedAt)}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -198,7 +222,7 @@ const s = {
   pageTitle: { fontSize: '1.4rem', fontWeight: '600' },
   newBtn: {
     padding: '0.5rem 1rem', borderRadius: '8px', border: 'none',
-    fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer'
+    fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer', transition: 'opacity 0.15s'
   },
   empty: { textAlign: 'center', marginTop: '4rem' },
   emptyState: { textAlign: 'center', marginTop: '5rem' },
