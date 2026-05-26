@@ -8,6 +8,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
+  const [searchQuery, setSearchQuery] = useState(''); // ADDED
   const navigate = useNavigate();
 
   const token = localStorage.getItem('token');
@@ -16,13 +17,16 @@ export default function Home() {
 
   const t = dark ? darkTheme : lightTheme;
 
-  // Fetch on mount
+  // ADDED: filter docs by title, case-insensitive
+  const filteredDocs = docs.filter(doc =>
+    (doc.title || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   useEffect(() => {
     if (!token) { navigate('/login'); return; }
     fetchDocs();
   }, []);
 
-  // Re-fetch when user returns to this page (after hitting Done in editor)
   useEffect(() => {
     function onFocus() { fetchDocs(); }
     window.addEventListener('focus', onFocus);
@@ -132,6 +136,22 @@ export default function Home() {
           </button>
         </div>
 
+        {/* ADDED: Search bar */}
+        {!loading && docs.length > 0 && (
+          <input
+            type="text"
+            placeholder="Search documents..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{
+              ...s.searchBar,
+              background: t.cardBg,
+              border: `1px solid ${t.border}`,
+              color: t.text,
+            }}
+          />
+        )}
+
         {loading ? (
           <p style={{ ...s.empty, color: t.subtext }}>Loading...</p>
         ) : docs.length === 0 ? (
@@ -139,10 +159,14 @@ export default function Home() {
             <p style={{ ...s.emptyTitle, color: t.text }}>No documents yet</p>
             <p style={{ ...s.emptySubtitle, color: t.subtext }}>Create your first document to get started</p>
           </div>
+        ) : filteredDocs.length === 0 ? ( // ADDED: no search results state
+          <div style={s.emptyState}>
+            <p style={{ ...s.emptyTitle, color: t.text }}>No results for "{searchQuery}"</p>
+            <p style={{ ...s.emptySubtitle, color: t.subtext }}>Try a different title</p>
+          </div>
         ) : (
           <div style={s.grid}>
-            {docs.map(doc => {
-              // Show actual title if it exists and isn't just "Untitled"
+            {filteredDocs.map(doc => { // ADDED: filteredDocs instead of docs
               const displayTitle = doc.title && doc.title.trim() !== '' ? doc.title : 'Untitled';
               const isUntitled = displayTitle === 'Untitled';
 
@@ -164,8 +188,6 @@ export default function Home() {
                       ✕
                     </button>
                   </div>
-
-                  {/* Title — real title in normal color, Untitled in muted color */}
                   <p style={{
                     ...s.docTitle,
                     color: isUntitled ? t.subtext : t.text,
@@ -173,7 +195,6 @@ export default function Home() {
                   }}>
                     {displayTitle}
                   </p>
-
                   <p style={{ ...s.docMeta, color: t.subtext }}>
                     Edited {formatDate(doc.updatedAt)}
                   </p>
@@ -223,6 +244,16 @@ const s = {
   newBtn: {
     padding: '0.5rem 1rem', borderRadius: '8px', border: 'none',
     fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer', transition: 'opacity 0.15s'
+  },
+  // ADDED
+  searchBar: {
+    width: '100%',
+    padding: '0.55rem 0.85rem',
+    borderRadius: '8px',
+    fontSize: '0.875rem',
+    marginBottom: '1.5rem',
+    outline: 'none',
+    boxSizing: 'border-box',
   },
   empty: { textAlign: 'center', marginTop: '4rem' },
   emptyState: { textAlign: 'center', marginTop: '5rem' },
