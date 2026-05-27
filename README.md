@@ -1,5 +1,5 @@
 
-# 📝 Live Collaboration Notes
+# 📝 CollabDocs
 
 A real-time collaborative document editor built with React, Node.js, and PostgreSQL. Multiple users can edit documents simultaneously, see live presence indicators, and share documents via email invites.
 
