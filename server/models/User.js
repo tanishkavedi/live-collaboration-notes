@@ -15,11 +15,26 @@ const User = sequelize.define('User', {
   password: {
     type: DataTypes.STRING,
     allowNull: false
+  },
+  resetToken: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  resetTokenExpiry: {
+    type: DataTypes.DATE,
+    allowNull: true
   }
 });
 
 User.beforeCreate(async (user) => {
   user.password = await bcrypt.hash(user.password, 10);
+});
+
+// ADDED: hash password on update too if it changed
+User.beforeUpdate(async (user) => {
+  if (user.changed('password')) {
+    user.password = await bcrypt.hash(user.password, 10);
+  }
 });
 
 User.prototype.comparePassword = function (plain) {
