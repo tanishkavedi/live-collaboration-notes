@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { authFetch, clearSession } from './utils/auth.js';
 
-const API = '';
+const API = import.meta.env.VITE_API_URL || '';
 
 export default function App() {
   const { docId } = useParams();

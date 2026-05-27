@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useIsMobile } from '../hooks/useIsMobile';
 
-const API = '';
+const API = import.meta.env.VITE_API_URL || '';
 
 export default function Home() {
   const [docs, setDocs] = useState([]);
