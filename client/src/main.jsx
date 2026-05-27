@@ -8,6 +8,8 @@ import Signup from './pages/Signup.jsx';
 import Home from './pages/Home.jsx';
 import AcceptInvite from './pages/AcceptInvite.jsx';
 import { isTokenValid } from './utils/auth.js';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 
 function Guard({ children }) {
   if (!isTokenValid()) {
@@ -28,6 +30,8 @@ createRoot(document.getElementById('root')).render(
         <Route path="/signup" element={<Signup />} />
         <Route path="/invite/:token" element={<AcceptInvite />} />
         <Route path="*" element={<Navigate to="/" />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>
