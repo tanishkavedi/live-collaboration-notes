@@ -8,6 +8,9 @@ export default defineConfig({
       '/docs': 'http://localhost:3001',
       '/login': 'http://localhost:3001',
       '/register': 'http://localhost:3001',
+      '/forgot-password': 'http://localhost:3001',
+      '/reset-password': 'http://localhost:3001',
+      '/invite': 'http://localhost:3001',
     }
   }
 })
