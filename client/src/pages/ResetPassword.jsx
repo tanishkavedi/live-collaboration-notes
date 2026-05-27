@@ -76,7 +76,7 @@ export default function ResetPassword() {
     if (password !== confirm) { setError('Passwords do not match'); return; }
     setStatus('submitting');
     try {
-      const res = await fetch(`/reset-password/${token}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/reset-password/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
