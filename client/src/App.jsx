@@ -35,7 +35,9 @@ export default function App() {
   useEffect(() => {
     if (!docId) { navigate('/'); return; }
 
-    socketRef.current = io(API, { auth: { token } });
+    const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+     socketRef.current = io(SOCKET_URL, { auth: { token } });
 
     socketRef.current.on('connect_error', (err) => {
       if (err.message === 'Unauthorized') {

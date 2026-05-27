@@ -212,6 +212,28 @@ app.get('/docs/:id/versions', requireAuth, async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
 });
 
+app.patch('/docs/:id/title', requireAuth, [
+  body('title').trim(),
+], async (req, res) => {
+  try {
+    const doc = await Document.findByPk(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Not found' });
+
+    const isOwner = doc.ownerId === req.user.id;
+    if (!isOwner) {
+      const user = await User.findByPk(req.user.id);
+      const share = await DocumentShare.findOne({
+        where: { docId: doc.id, inviteeEmail: user.email, acceptedByUserId: req.user.id, role: 'edit' }
+      });
+      if (!share) return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    await doc.update({ title: req.body.title || 'Untitled' });
+    res.json({ ok: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: 'Server error' }); }
+});
+
+
 // ─── Sharing ──────────────────────────────────────────────────────────────────
 
 app.post('/docs/:id/share', requireAuth, [
